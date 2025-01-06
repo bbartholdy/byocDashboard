@@ -1,0 +1,256 @@
+---
+#title: Validity of a Calcifying Oral Biofilm Model
+logo: images/plantagonewtinywhite.svg
+format: 
+  dashboard: default
+nav-buttons: 
+  - icon: github
+    aria-label: GitHub
+    href: "https://github.com/bbartholdy/byoc-valid"
+  - text: "{< ai biorxiv >}"
+    aria-label: bioRxiv
+    href: "https://doi.org/10.1101/2023.05.23.541904"
+server: shiny
+---
+
+```{r}
+#| context: setup
+
+library(shiny)
+library(dplyr)
+library(stringr)
+library(plotly)
+library(ggplot2)
+library(DT)
+library(mixOmics)
+otu_decontam <- readr::read_tsv("data/post-decontam_taxatable.tsv")
+dna_metadata <- readr::read_tsv("data/dna-metadata.tsv")
+load("data/ftir-data.RData")
+load("data/ftir-metadata.RData")
+load("data/spca_species_ext.rda")
+
+otu_table <- otu_decontam |>
+  tibble::column_to_rownames(var = "#OTU ID") |>
+  t()
+
+clr_transform <- mixOmics::logratio.transfo(otu_table, "CLR", 1)
+class(clr_transform) <- "matrix"
+spca_data <- spca(clr_transform, scale = FALSE)
+clr_transform <- tibble::as_tibble(clr_transform)
+clr_transform2 <- mixOmics::logratio.transfo(otu_table, "CLR", 1)
+class(clr_transform2) <- "matrix"
+clr_transform2 <- tibble::as_tibble(clr_transform2)
+```
+
+# Metagenomic Beta diversity
+
+## {.sidebar}
+
+##### Input data for sPCA
+
+```{r}
+selectInput(
+  inputId = "env",
+  label = "Sample type",
+  choices = dna_metadata$Env,
+  selected = c("saliva", "model_calculus", "modern_calculus"),
+  multiple = TRUE
+)
+selectInput(
+  "x_axis", 
+  "x-axis", 
+  choices = paste0("PC", 1:10), 
+  "PC1"
+)
+selectInput(
+  "y_axis", 
+  "y-axis", 
+  choices = paste0("PC", 1:10), 
+  "PC2"
+)
+```
+
+##### sPCA parameters
+
+```{r}
+numericInput("ncomp", "Number of components", value = 10, min = 1, max = 10)
+radioButtons("center", "Center", choices = c("TRUE", "FALSE"))
+radioButtons("scale", "Scale", choices = c("TRUE" = TRUE, "FALSE" = FALSE), "FALSE")
+```
+
+<!-- counts of bacteria in each sample (Kraken tables)? - using DT::datatable -->
+
+## Column {width="60%"}
+
+```{r}
+#| title: Samples
+#| height: "40%"
+tableOutput("test_env_input")
+```
+
+
+```{r}
+#| title: sPCA plot
+plotOutput("spca_plot")
+```
+
+## Column
+
+```{r}
+#| title: Proportion of variance explained
+#| height: "40%"
+plotOutput("spca_scree")
+```
+
+```{r}
+#| title: Loadings
+dataTableOutput("spca_table")
+```
+
+
+# FTIR spectra
+
+## {.sidebar}
+
+```{r}
+selectInput("sample", "Sample ID", unique(ftir_data$sample_id), selected = NULL, multiple = TRUE)
+selectInput("day", "Day", c(7, 12, 16, 20, 24), selected = NULL, multiple = TRUE)
+selectInput("type", "Sample type", unique(ftir_metadata$source), selected = "Artificial", multiple = TRUE)
+```
+
+## Column
+
+### {.toolbar}
+
+```{r}
+varSelectInput("ftir_tbl", "Variables", ftir_metadata, multiple = TRUE, selected = c("sample_id", "source", "sample_type"))
+```
+
+### Row {height="20%"}
+
+```{r}
+tableOutput("ftir_table")
+#verbatimTextOutput("ftir_table")
+```
+
+
+### Row
+
+```{r}
+plotlyOutput("ftir_spectra")
+```
+
+
+# About
+
+This dashboard contains interactive supplementary material to the preprint
+[Assessing the validity of a calcifying oral biofilm model as a suitable proxy for dental calculus](https://doi.org/10.1101/2023.05.23.541904).
+
+You can use it to explore the data for yourself without being stuck with the decisions
+I made in the publication. There are still some limitations based on the design of the
+user interface, but it's certainly better than a PDF, right?
+
+If you disagree with my decisions in the publication AND in the dashboard (I wouldn't blame you),
+all the data and code are available.
+
+- FTIR: <https://doi.org/10.4121/466b2588-9689-4d84-a8a0-5216aa39e40b.v1>
+- DNA sequences: <https://www.ebi.ac.uk/ena/browser/view/PRJEB61886>
+- Source code (publication and dashboard): <https://doi.org/10.4121/99932661-fe79-4f4e-a812-a8917ad18fd0.v2>
+
+## Row {title="To cite"}
+
+> Assessing the validity of a calcifying oral biofilm model as a suitable proxy for dental calculus  
+> Bjørn Peare Bartholdy, Irina M. Velsko, Shira Gur-Arieh, Zandra Fagernäs, Christina Warinner, Amanda G. Henry  
+> bioRxiv 2023.05.23.541904; doi: https://doi.org/10.1101/2023.05.23.541904 
+
+
+
+```{r}
+#| context: server
+
+## Metagenomics section
+
+env_filter <- reactive({
+  subset(dna_metadata, dna_metadata$Env %in% input$env)
+})
+
+env_spca <- reactive({
+  otu_table[row.names(otu_table) %in% env_filter()$`#SampleID`,] |>
+    logratio.transfo("CLR", 1) |>
+    spca(ncomp = input$ncomp, scale = as.logical(input$scale))
+})
+
+output$test_env_input <- renderTable({
+  env_filter()
+})
+
+output$spca_scree <- renderPlot({
+  plot(env_spca()$prop_expl_var$X, type = "l", ylab = "Proportion variance explained", xlab = "Component")
+})
+
+output$spca_plot <- renderPlot({
+  env_spca()$x |>
+    as_tibble(rownames = "sample") |>
+    left_join(dna_metadata, by = c("sample" = "#SampleID")) |>
+    ggplot(aes(x = .data[[input$x_axis]], y = .data[[input$y_axis]], col = Env, shape = Env)) +
+      geom_point(size = 4, stroke = 1) +
+      geom_vline(xintercept = 0, linewidth = 0.2) +
+      geom_hline(yintercept = 0, linewidth = 0.2) +
+      theme_minimal() +
+      labs(
+        x = paste(
+          input$x_axis, 
+          scales::percent(env_spca()$prop_expl_var$X[input$x_axis], accuracy = 0.1)
+        ),
+        y = paste(
+          input$y_axis, 
+          scales::percent(env_spca()$prop_expl_var$X[input$y_axis], accuracy = 0.1)
+        )
+      )
+})
+
+output$spca_table <- renderDT({
+  env_spca()$loadings$X |>
+    as_tibble(rownames = "Species") |>
+    dplyr::select(Species, .data[[input$x_axis]], .data[[input$y_axis]]) |>
+    datatable(rownames = FALSE)
+})
+
+## FTIR section
+
+ftir_filter <- reactive({
+  ftir_data |>
+    (\(x) if(!is.null(input$day)) filter(x, day == input$day) else x)() |>
+    (\(x) if( !is.null(input$sample) ) filter(x, str_detect(analysis_id, input$sample)) else x)() |>
+    (\(x) if( !is.null(input$type) ) filter(x, source == input$type) else x)()
+})
+
+ftir_filter_table <- reactive({
+  ftir_metadata #|>
+    #(\(x) if(!is.null(input$day)) filter(x, day == input$day) else x)() |>
+    #(\(x) if( !is.null(input$sample) ) filter(x, sample_id == input$sample) else x)()
+})
+
+# output$ftir_table <- renderText({
+#   input$ftir_tbl
+# })
+
+output$ftir_table <- renderTable({
+      if (length(input$ftir_tbl) == 0) return(ftir_metadata)
+      ftir_metadata |> 
+        dplyr::select(!!!input$ftir_tbl)
+})#, rownames = TRUE)
+
+# output$ftir_table <- renderTable({
+#   ftir_filter_table()
+# })
+
+output$ftir_spectra <- renderPlotly({
+    pl <- ftir_filter() |>
+    ggplot(aes(x = wavenumber, y = abs, col = analysis_id)) +
+        geom_line() +
+        theme_classic()
+    pl
+})
+
+```
