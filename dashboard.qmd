@@ -7,7 +7,7 @@ nav-buttons:
   - icon: github
     aria-label: GitHub
     href: "https://github.com/bbartholdy/byoc-valid"
-  - text: "{< ai biorxiv >}"
+  - icon: file-earmark-text-fill
     aria-label: bioRxiv
     href: "https://doi.org/10.1101/2023.05.23.541904"
 server: shiny
@@ -18,31 +18,32 @@ server: shiny
 
 library(shiny)
 library(dplyr)
+library(tidyr)
 library(stringr)
-library(plotly)
 library(ggplot2)
+library(plotly)
 library(DT)
 library(mixOmics)
-otu_decontam <- readr::read_tsv("data/post-decontam_taxatable.tsv")
+load("data/otu_decontam.rda")
+load("data/ftir_data.rda")
 dna_metadata <- readr::read_tsv("data/dna-metadata.tsv")
-load("data/ftir-data.RData")
-load("data/ftir-metadata.RData")
-load("data/spca_species_ext.rda")
+ftir_metadata <- readr::read_tsv("data/ftir-metadata.tsv")
+
+ftir_metadata_long <- ftir_metadata |>
+  separate_longer_delim(analysis_id, delim = ";")
+
+ftir_byoc <- ftir_metadata_long |>
+  filter(str_detect(sample_id, "^F"))
+
+ftir_comp <- ftir_metadata_long |>
+  filter(str_detect(sample_id, "^F", negate = T))
 
 otu_table <- otu_decontam |>
   tibble::column_to_rownames(var = "#OTU ID") |>
   t()
-
-clr_transform <- mixOmics::logratio.transfo(otu_table, "CLR", 1)
-class(clr_transform) <- "matrix"
-spca_data <- spca(clr_transform, scale = FALSE)
-clr_transform <- tibble::as_tibble(clr_transform)
-clr_transform2 <- mixOmics::logratio.transfo(otu_table, "CLR", 1)
-class(clr_transform2) <- "matrix"
-clr_transform2 <- tibble::as_tibble(clr_transform2)
 ```
 
-# Metagenomic Beta diversity
+# Microbial sPCA
 
 ## {.sidebar}
 
@@ -74,11 +75,10 @@ selectInput(
 
 ```{r}
 numericInput("ncomp", "Number of components", value = 10, min = 1, max = 10)
-radioButtons("center", "Center", choices = c("TRUE", "FALSE"))
+radioButtons("center", "Center", choices = c("TRUE", "FALSE"), "TRUE")
 radioButtons("scale", "Scale", choices = c("TRUE" = TRUE, "FALSE" = FALSE), "FALSE")
 ```
 
-<!-- counts of bacteria in each sample (Kraken tables)? - using DT::datatable -->
 
 ## Column {width="60%"}
 
@@ -113,9 +113,19 @@ dataTableOutput("spca_table")
 ## {.sidebar}
 
 ```{r}
-selectInput("sample", "Sample ID", unique(ftir_data$sample_id), selected = NULL, multiple = TRUE)
-selectInput("day", "Day", c(7, 12, 16, 20, 24), selected = NULL, multiple = TRUE)
-selectInput("type", "Sample type", unique(ftir_metadata$source), selected = "Artificial", multiple = TRUE)
+selectInput(
+  "sample",
+  "Analysis ID",
+  unique(ftir_byoc$analysis_id),
+  selected = "F24.1A3",
+  multiple = TRUE
+)
+checkboxGroupInput(
+  "comp", 
+  "Comparative sample", 
+  choices = c("Archaeological" = "ArchDC_MB11_grind_c", "Modern" = "modern-ref_1"),
+  selected = c("ArchDC_MB11_grind_c", "modern-ref_1")
+)
 ```
 
 ## Column
@@ -123,16 +133,15 @@ selectInput("type", "Sample type", unique(ftir_metadata$source), selected = "Art
 ### {.toolbar}
 
 ```{r}
-varSelectInput("ftir_tbl", "Variables", ftir_metadata, multiple = TRUE, selected = c("sample_id", "source", "sample_type"))
+#| title: Table of samples
+varSelectInput("ftir_tbl", "Variables", ftir_metadata, multiple = TRUE, selected = c("analysis_id", "sample_id", "source", "sample_type"))
 ```
 
-### Row {height="20%"}
+### Row {height="36%"}
 
 ```{r}
-tableOutput("ftir_table")
-#verbatimTextOutput("ftir_table")
+dataTableOutput("ftir_table")
 ```
-
 
 ### Row
 
@@ -143,7 +152,7 @@ plotlyOutput("ftir_spectra")
 
 # About
 
-This dashboard contains interactive supplementary material to the preprint
+This dashboard contains interactive supplementary material to the bioRxiv preprint
 [Assessing the validity of a calcifying oral biofilm model as a suitable proxy for dental calculus](https://doi.org/10.1101/2023.05.23.541904).
 
 You can use it to explore the data for yourself without being stuck with the decisions
@@ -157,13 +166,24 @@ all the data and code are available.
 - DNA sequences: <https://www.ebi.ac.uk/ena/browser/view/PRJEB61886>
 - Source code (publication and dashboard): <https://doi.org/10.4121/99932661-fe79-4f4e-a812-a8917ad18fd0.v2>
 
-## Row {title="To cite"}
+::: {.card title="BibTeX"}
 
-> Assessing the validity of a calcifying oral biofilm model as a suitable proxy for dental calculus  
-> Bjørn Peare Bartholdy, Irina M. Velsko, Shira Gur-Arieh, Zandra Fagernäs, Christina Warinner, Amanda G. Henry  
-> bioRxiv 2023.05.23.541904; doi: https://doi.org/10.1101/2023.05.23.541904 
+```bibtex
+@article {Bartholdy2023.05.23.541904,
+	author = {Bartholdy, Bj{\o}rn Peare and Velsko, Irina M. and Gur-Arieh, Shira and Fagern{\"a}s, Zandra and Warinner, Christina and Henry, Amanda G.},
+	title = {Assessing the validity of a calcifying oral biofilm model as a suitable proxy for dental calculus},
+	elocation-id = {2023.05.23.541904},
+	year = {2023},
+	doi = {10.1101/2023.05.23.541904},
+	publisher = {Cold Spring Harbor Laboratory},
+	abstract = {Dental calculus is increasingly used by researchers to study dietary patterns in past populations. The benefits of using dental calculus for this purpose have been clearly demonstrated in previous studies, with dental calculus harbouring a wealth of microremains and biomarkers for health and diet within its mineral matrix. Previous studies have demonstrated some of the limitations and biases of how methods of processing may overlook, or even remove, some of the important information contained within the mineralised matrix. However, there are many factors that are impossible to account for in vivo and in archaeological material, such as exact dietary intake, and individual factors such as pH and enzyme activity, leaving some limitations that may not be addressed through these types of studies and will require a different approach.We present a protocol for creating a calcifying oral biofilm model that can be used to explore the biases and limitations of dental calculus as a medium for paleodietary reconstructions. We report the microbial and mineral composition of our model in an effort to validate the model calculus as an appropriate proxy to natural dental calculus. The microbial profile and species diversity of our model was determined using metagenomic classification with the nf-core/eager pipeline and Kraken2, and compared to various reference samples from oral sites, including saliva, plaque, and dental calculus. We then assessed whether our model calculus mineralises in a manner similar to natural dental calculus using Fourier transform infrared (FTIR) spectroscopy. The metagenomic classification showed a microbial profile predominantly made up of (facultative) anaerobes, with a community structure that was somewhat distinct from other oral reference samples. The core genera of the model consisted of oral species, but clustered separately from oral reference samples, with a higher abundance of anaerobes.Mineral and organic components of our model mimic that of the modern and archaeological reference calculus that was used as a comparison. There was an overall increase in the inorganic component relative to organic over the course of the experiment, with carbonated hydroxyapatite as the principal compound, consistent with natural human-derived calculus.We conclude that oral biofilm models, such as the one presented in this study, have great potential to validate current methods used in the analysis of archaeological dental calculus, and should be used to complement, rather than replace current in vivo studies.Competing Interest StatementThe authors have declared no competing interest.},
+	URL = {https://www.biorxiv.org/content/early/2023/05/30/2023.05.23.541904},
+	eprint = {https://www.biorxiv.org/content/early/2023/05/30/2023.05.23.541904.full.pdf},
+	journal = {bioRxiv}
+}
+```
 
-
+:::
 
 ```{r}
 #| context: server
@@ -177,7 +197,7 @@ env_filter <- reactive({
 env_spca <- reactive({
   otu_table[row.names(otu_table) %in% env_filter()$`#SampleID`,] |>
     logratio.transfo("CLR", 1) |>
-    spca(ncomp = input$ncomp, scale = as.logical(input$scale))
+    spca(ncomp = input$ncomp, scale = as.logical(input$scale), center = as.logical(input$center))
 })
 
 output$test_env_input <- renderTable({
@@ -219,34 +239,20 @@ output$spca_table <- renderDT({
 ## FTIR section
 
 ftir_filter <- reactive({
-  ftir_data |>
-    (\(x) if(!is.null(input$day)) filter(x, day == input$day) else x)() |>
-    (\(x) if( !is.null(input$sample) ) filter(x, str_detect(analysis_id, input$sample)) else x)() |>
-    (\(x) if( !is.null(input$type) ) filter(x, source == input$type) else x)()
+  ftir_metadata_long |>
+    (\(x) if (!is.null(input$comp)) filter(x, analysis_id %in% c(input$comp, input$sample)) else filter(x, analysis_id %in% input$sample))()
 })
 
-ftir_filter_table <- reactive({
-  ftir_metadata #|>
-    #(\(x) if(!is.null(input$day)) filter(x, day == input$day) else x)() |>
-    #(\(x) if( !is.null(input$sample) ) filter(x, sample_id == input$sample) else x)()
-})
-
-# output$ftir_table <- renderText({
-#   input$ftir_tbl
-# })
-
-output$ftir_table <- renderTable({
+output$ftir_table <- DT::renderDataTable({
+      #if (length(input$ftir_tbl) == 0) return(ftir_filter())
       if (length(input$ftir_tbl) == 0) return(ftir_metadata)
       ftir_metadata |> 
         dplyr::select(!!!input$ftir_tbl)
-})#, rownames = TRUE)
-
-# output$ftir_table <- renderTable({
-#   ftir_filter_table()
-# })
+})
 
 output$ftir_spectra <- renderPlotly({
     pl <- ftir_filter() |>
+      left_join(ftir_data, by = "analysis_id") |>      
     ggplot(aes(x = wavenumber, y = abs, col = analysis_id)) +
         geom_line() +
         theme_classic()

@@ -1,4 +1,5 @@
-ftir_data <- readr::read_csv("https://raw.githubusercontent.com/bbartholdy/byoc-valid/refs/heads/main/05-results/ftir-data_long.csv")
-ftir_metadata <- readr::read_tsv("https://raw.githubusercontent.com/bbartholdy/byoc-valid/refs/heads/main/01-documentation/ftir-metadata.tsv")
-save(ftir_data, file = "data/ftir-data.RData")
-save(ftir_metadata, file = "data/ftir-metadata.RData")
+otu_decontam <- readr::read_tsv("data-raw/post-decontam_taxatable.tsv")
+ftir_data <- readr::read_csv("https://raw.githubusercontent.com/bbartholdy/byoc-valid/refs/heads/main/05-results/ftir_full-data.csv")
+save(ftir_data, file = "data/ftir_data.rda", compress = "bzip2")
+save(otu_decontam, file = "data/otu_decontam.rda", compress = "bzip2")
+
