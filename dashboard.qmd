@@ -255,6 +255,7 @@ output$ftir_spectra <- renderPlotly({
       left_join(ftir_data, by = "analysis_id") |>      
     ggplot(aes(x = wavenumber, y = abs, col = analysis_id)) +
         geom_line() +
+        scale_x_reverse() +
         theme_classic()
     pl
 })
